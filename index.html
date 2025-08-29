@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Experiments Hub</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --card-bg: #161b22;
+            --text-primary: #e6edf3;
+            --text-secondary: #7d8590;
+            --accent-color: #238636;
+            --border-color: #30363d;
+            --hover-bg: #21262d;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .logo {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-color), #2ea043);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .project-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .project-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent-color);
+            box-shadow: 0 12px 40px rgba(35, 134, 54, 0.15);
+        }
+
+        .project-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent-color), #2ea043);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .project-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .project-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        .project-description {
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+
+        .project-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--accent-color);
+            color: white;
+            text-decoration: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .project-link:hover {
+            background: #2ea043;
+            transform: translateX(2px);
+        }
+
+        .project-link svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            margin: 4rem 0;
+            padding: 2rem;
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent-color);
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            .logo {
+                font-size: 2rem;
+            }
+
+            .projects-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stats {
+                flex-direction: column;
+                gap: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">Experiments Hub</div>
+            <p class="subtitle">
+                Welcome to my collection of experimental projects and prototypes.
+                Each project represents a unique exploration into different technologies and ideas.
+            </p>
+        </header>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-number" id="project-count">1</div>
+                <div class="stat-label">Projects</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">∞</div>
+                <div class="stat-label">Possibilities</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">🚀</div>
+                <div class="stat-label">Innovation</div>
+            </div>
+        </div>
+
+        <div class="projects-grid" id="projects-container">
+            <!-- Projects will be dynamically loaded here -->
+        </div>
+
+        <footer class="footer">
+            <p>Built with ❤️ and hosted on GitHub Pages</p>
+        </footer>
+    </div>
+
+    <script>
+        // Project configurations - add new projects here
+        const projects = [
+            {
+                title: "Vibecoding",
+                description: "An AI-powered chat interface for coding assistance and conversations. Features a sleek design with real-time markdown rendering and code syntax highlighting.",
+                file: "cerebras.html",
+                tags: ["AI", "Chat", "Coding", "Web App"]
+            }
+            // Add more projects here as you create them
+            // {
+            //     title: "Project Name",
+            //     description: "Project description...",
+            //     file: "filename.html",
+            //     tags: ["tag1", "tag2"]
+            // }
+        ];
+
+        // Function to render projects
+        function renderProjects() {
+            const container = document.getElementById('projects-container');
+            const projectCount = document.getElementById('project-count');
+
+            container.innerHTML = '';
+
+            projects.forEach(project => {
+                const projectCard = document.createElement('div');
+                projectCard.className = 'project-card';
+
+                const tagsHtml = project.tags ?
+                    project.tags.map(tag => `<span style="background: var(--hover-bg); padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; margin-right: 0.5rem;">${tag}</span>`).join('') : '';
+
+                projectCard.innerHTML = `
+                    <div class="project-title">${project.title}</div>
+                    <div class="project-description">${project.description}</div>
+                    ${tagsHtml ? `<div style="margin-bottom: 1rem;">${tagsHtml}</div>` : ''}
+                    <a href="pages/${project.file}" class="project-link">
+                        Launch Project
+                        <svg viewBox="0 0 16 16" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10.22 2.22a.75.75 0 0 1 1.06 0l3 3a.75.75 0 0 1 0 1.06l-3 3a.75.75 0 1 1-1.06-1.06L12.44 6H3.75a.75.75 0 0 1 0-1.5h8.69L10.22 2.22a.75.75 0 0 1 0-1.06Z"/>
+                        </svg>
+                    </a>
+                `;
+
+                container.appendChild(projectCard);
+            });
+
+            // Update project count
+            projectCount.textContent = projects.length;
+        }
+
+        // Auto-discover HTML files in pages directory (for future enhancement)
+        // This would require server-side support, so for now we use the manual config above
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', renderProjects);
+    </script>
+</body>
+</html>
