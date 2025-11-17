@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telegram Chat Processor (JS)</title>
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      /* Prevent body scroll */
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      /* margin: 20px; */
+      /* Removed to allow full height */
+      background-color: #f0f2f5;
+      color: #333;
+      line-height: 1.6;
+      display: flex;
+      /* Added for flex layout */
+      flex-direction: column;
+      /* Added for flex layout */
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 20px auto;
+      /* Keep horizontal centering, adjust vertical margin if needed */
+      background-color: #fff;
+      padding: 25px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      display: flex;
+      /* Added for flex layout */
+      flex-direction: column;
+      /* Added for flex layout */
+      flex-grow: 1;
+      /* Allow container to grow */
+      overflow: hidden;
+      /* Prevent container from causing body scroll */
+      height: calc(100% - 40px);
+      /* Adjust based on body margin or use 100vh if no body margin */
+    }
+
+    h1 {
+      color: #007bff;
+      text-align: center;
+      margin-bottom: 20px;
+      flex-shrink: 0;
+      /* Prevent shrinking */
+    }
+
+    label {
+      font-weight: bold;
+      display: block;
+      margin-bottom: 8px;
+      color: #555;
+      flex-shrink: 0;
+      /* Prevent shrinking */
+    }
+
+    input[type="file"] {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 25px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+      flex-shrink: 0;
+      /* Prevent shrinking */
+    }
+
+    h2 {
+      flex-shrink: 0;
+      /* Prevent shrinking */
+    }
+
+    button {
+      flex-shrink: 0;
+      /* Prevent shrinking */
+      padding: 8px 15px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    button:active {
+      background-color: #004085;
+    }
+
+    #applyFilters {
+      background-color: #28a745;
+    }
+
+    #applyFilters:hover {
+      background-color: #218838;
+    }
+
+    #applyFilters:active {
+      background-color: #1e7e34;
+    }
+
+    #optionsContent {
+      max-height: 2000px;
+      overflow: hidden;
+      transition: max-height 0.4s ease, opacity 0.3s ease, margin-top 0.4s ease;
+      opacity: 1;
+      margin-top: 15px;
+    }
+
+    #optionsContent.collapsed {
+      max-height: 0;
+      opacity: 0;
+      margin-top: 0;
+    }
+
+    #toggleIcon {
+      transition: transform 0.3s ease;
+    }
+
+    #toggleIcon.collapsed {
+      transform: rotate(-90deg);
+    }
+
+    #optionsHeader:hover {
+      opacity: 0.8;
+    }
+
+    #output {
+      /* This is the textarea */
+      border: 1px solid #ddd;
+      padding: 15px;
+      margin-top: 5px;
+      /* Adjusted from 15px */
+      background-color: #f9f9f9;
+      /* min-height: 150px; */
+      /* Let flexbox handle height */
+      border-radius: 4px;
+      flex-grow: 1;
+      /* Allow textarea to take available space */
+      overflow-y: auto;
+      /* Ensure textarea scrolls */
+      /* Styles below are less relevant for a textarea or handled by its default styles or inline styles */
+      /* white-space: pre-wrap; */
+      /* word-wrap: break-word; */
+      /* max-height: 70vh; */
+      /* Control height with rows attribute or specific CSS if needed */
+      /* overflow-y: auto; */
+      /* font-family: 'Courier New', Courier, monospace; */
+      /* font-size: 0.9em; */
+    }
+
+    /* .message-block styling is no longer needed */
+    /*
+        .message-block {
+            border-bottom: 1px dashed #eee;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+        .message-block:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+        */
+    .error {
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Telegram Chat Processor</h1>
+
+    <label for="jsonFile">Select your <code>result.json</code> file:</label>
+    <input type="file" id="jsonFile" accept=".json">
+
+    <!-- Progress indicator for file loading -->
+    <div id="loadProgressContainer" style="margin: 15px 0; display: none;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; color: #555;">
+        <span id="loadProgressText">Loading...</span>
+        <span id="loadProgressCount"></span>
+      </div>
+      <div style="width: 100%; height: 20px; background-color: #e0e0e0; border-radius: 10px; overflow: hidden;">
+        <div id="loadProgressBar" style="width: 0%; height: 100%; background-color: #007bff; transition: width 0.3s ease;"></div>
+      </div>
+    </div>
+
+    <div style="margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 4px; border: 1px solid #ddd;">
+      <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" id="optionsHeader">
+        <h3 style="margin: 0;">Conversion Options</h3>
+        <span id="toggleIcon" style="font-size: 24px; user-select: none;">▼</span>
+      </div>
+
+      <div id="optionsContent">
+
+      <div style="margin-bottom: 15px;">
+        <label style="display: inline-flex; align-items: center; cursor: pointer;">
+          <input type="checkbox" id="groupByReplies" checked style="margin-right: 8px; width: auto;">
+          <span>Group by replies (threaded view)</span>
+        </label>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 10px;">
+        <div>
+          <label for="dateFrom" style="margin-bottom: 5px;">From Date:</label>
+          <input type="date" id="dateFrom" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+          <input type="time" id="timeFrom" value="00:00" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; margin-top: 5px;">
+        </div>
+        <div>
+          <label for="dateTo" style="margin-bottom: 5px;">To Date:</label>
+          <input type="date" id="dateTo" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+          <input type="time" id="timeTo" value="23:59" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; margin-top: 5px;">
+        </div>
+      </div>
+
+      <div style="margin-bottom: 10px;">
+        <label for="childsOf" style="margin-bottom: 5px;">Children of Message ID (optional):</label>
+        <input type="text" id="childsOf" placeholder="e.g., 12345" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+        <small style="color: #666; font-size: 12px;">Filter messages that reply to this message ID (includes all descendants in the reply chain)</small>
+      </div>
+
+      <button id="applyFilters" style="width: 100%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Convert</button>
+      </div>
+    </div>
+
+    <!-- Progress indicator for conversion -->
+    <div id="progressContainer" style="margin: 15px 0; display: none;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; color: #555;">
+        <span id="progressText">Processing...</span>
+        <span id="progressCount">0 / 0</span>
+      </div>
+      <div style="width: 100%; height: 20px; background-color: #e0e0e0; border-radius: 10px; overflow: hidden;">
+        <div id="progressBar" style="width: 0%; height: 100%; background-color: #28a745; transition: width 0.3s ease;"></div>
+      </div>
+    </div>
+
+    <h2>Processed Output:</h2>
+    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+      <button id="copyButton">Copy</button>
+      <button id="saveButton">Save</button>
+    </div>
+    <textarea id="output" rows="10" style="width: 100%; box-sizing: border-box;"
+      readonly>Select a file above to see the processed messages.</textarea>
+  </div>
+
+  <script>
+    // Toggle options panel
+    function toggleOptions() {
+      const content = document.getElementById('optionsContent');
+      const icon = document.getElementById('toggleIcon');
+
+      content.classList.toggle('collapsed');
+      icon.classList.toggle('collapsed');
+    }
+
+    // Collapse options panel
+    function collapseOptions() {
+      const content = document.getElementById('optionsContent');
+      const icon = document.getElementById('toggleIcon');
+
+      content.classList.add('collapsed');
+      icon.classList.add('collapsed');
+    }
+
+    // Expand options panel
+    function expandOptions() {
+      const content = document.getElementById('optionsContent');
+      const icon = document.getElementById('toggleIcon');
+
+      content.classList.remove('collapsed');
+      icon.classList.remove('collapsed');
+    }
+
+    // Add click handler for header
+    document.addEventListener('DOMContentLoaded', function() {
+      document.getElementById('optionsHeader').addEventListener('click', toggleOptions);
+    });
+
+    function createMessageObject(message) {
+      if (!message) {
+        return null;
+      }
+
+      // Common structure for all processed messages
+      let messageData = {
+        id: message.id || "N/A",
+        date: message.date ? new Date(message.date).toLocaleString() : "Unknown Date",
+      };
+
+      // Add reply_to_message_id if it exists, for tree building
+      if (message.reply_to_message_id != null) {
+        messageData.reply_to_message_id = message.reply_to_message_id;
+      }
+
+      if (message.type === "message") {
+        let messageTextContent;
+        if (typeof message.text === 'string') {
+          messageTextContent = message.text;
+        } else if (Array.isArray(message.text)) {
+          messageTextContent = message.text.map(item => {
+            if (typeof item === 'string') {
+              return item;
+            } else if (item && typeof item.text === 'string') {
+              return item.text;
+            }
+            return ''; // Fallback for malformed or unexpected array items
+          }).join('');
+        } else if (message.text === null || message.text === undefined) {
+          messageTextContent = ''; // Explicitly handle null or undefined text
+        } else {
+          console.warn("Message text is of an unexpected type:", message.text, "Message ID:", message.id);
+          messageTextContent = '[Unsupported message format]';
+        }
+
+        messageData.text = messageTextContent;
+        messageData.processed_type = "user_message"; // To distinguish if needed
+        messageData.from = message.from || message.author || "Unknown User"; // message.author for channel posts
+        return messageData;
+
+      } else if (message.type === "service" && message.action === "topic_created") {
+        messageData.text = `Topic: ${message.title || "Untitled Topic"}`;
+        messageData.processed_type = "topic_creation"; // To distinguish if needed
+        messageData.from = message.actor || "System (Topic Creation)";
+        // Service specific fields if needed for later processing
+        // messageData.service_action = message.action;
+        // messageData.topic_title = message.title;
+        return messageData;
+
+      } else {
+        // This message type is not handled (e.g., other service messages), so filter it out
+        return null;
+      }
+    }
+
+    function buildMessageTree(messages) {
+      if (!Array.isArray(messages)) {
+        console.error("Input to buildMessageTree is not an array:", messages);
+        return [];
+      }
+
+      const allMessageObjects = messages
+        .map(createMessageObject)
+        .filter(msgObj => msgObj !== null);
+
+      const messageMap = {};
+      allMessageObjects.forEach(msgObj => {
+        messageMap[msgObj.id] = msgObj;
+      });
+
+      const rootMessages = [];
+      allMessageObjects.forEach(msgObj => {
+        if (msgObj.reply_to_message_id && messageMap[msgObj.reply_to_message_id]) {
+          const parentMessage = messageMap[msgObj.reply_to_message_id];
+          if (!parentMessage.replies) {
+            parentMessage.replies = [];
+          }
+          parentMessage.replies.push(msgObj);
+          // Optional: sort replies if needed, e.g., by date
+          // parentMessage.replies.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        } else {
+          rootMessages.push(msgObj);
+        }
+      });
+
+      // Optional: sort root messages if needed, e.g., by date
+      // rootMessages.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Clean up the temporary reply_to_message_id property from all objects
+      // No longer needed to delete reply_to_message_id here as it's not included in XML unless it's a reply object
+      // allMessageObjects.forEach(msgObj => {
+      //   delete msgObj.reply_to_message_id;
+      // });
+
+      return rootMessages;
+    }
+
+    function escapeXml(unsafe) {
+      if (typeof unsafe !== 'string') {
+        return unsafe;
+      }
+      return unsafe.replace(/[<>&"']/g, function (match) {
+        switch (match) {
+          case '<': return '&lt;';
+          case '>': return '&gt;';
+          case '&': return '&amp;';
+          case '"': return '&quot;';
+          case "'": return '&apos;';
+          default: return match;
+        }
+      });
+    }
+
+    function formatMessageToXML(message, indentLevel = 0) {
+      if (!message) return '';
+      const indent = '  '.repeat(indentLevel);
+
+      // Build attributes
+      let attributes = `id="${escapeXml(message.id)}"`;
+      attributes += ` date="${escapeXml(message.date)}"`;
+      attributes += ` from="${escapeXml(message.from)}"`;
+      attributes += ` type="${escapeXml(message.processed_type)}"`;
+
+      if (message.replies && message.replies.length > 0) {
+        // Has replies - need closing tag
+        let xml = `${indent}<message ${attributes}>\n`;
+        xml += `${indent}  ${escapeXml(message.text)}\n`;
+        xml += `${indent}  <replies>\n`;
+        message.replies.forEach(reply => {
+          xml += formatMessageToXML(reply, indentLevel + 2);
+        });
+        xml += `${indent}  </replies>\n`;
+        xml += `${indent}</message>\n`;
+        return xml;
+      } else {
+        // No replies - can use self-closing or simple closing
+        let xml = `${indent}<message ${attributes}>\n`;
+        xml += `${indent}  ${escapeXml(message.text)}\n`;
+        xml += `${indent}</message>\n`;
+        return xml;
+      }
+    }
+
+    function formatMessageToXMLFlat(message, indentLevel = 0) {
+      if (!message) return '';
+      const indent = '  '.repeat(indentLevel);
+
+      // Build attributes
+      let attributes = `id="${escapeXml(message.id)}"`;
+      attributes += ` date="${escapeXml(message.date)}"`;
+      attributes += ` from="${escapeXml(message.from)}"`;
+      attributes += ` type="${escapeXml(message.processed_type)}"`;
+
+      if (message.reply_to_message_id) {
+        attributes += ` reply_to="${escapeXml(message.reply_to_message_id)}"`;
+      }
+
+      let xml = `${indent}<message ${attributes}>\n`;
+      xml += `${indent}  ${escapeXml(message.text)}\n`;
+      xml += `${indent}</message>\n`;
+      return xml;
+    }
+
+    function flattenMessages(messages) {
+      const flattened = [];
+
+      function flatten(msg) {
+        // Create a copy without the replies property
+        const msgCopy = { ...msg };
+        delete msgCopy.replies;
+        flattened.push(msgCopy);
+
+        // Process replies recursively
+        if (msg.replies && msg.replies.length > 0) {
+          msg.replies.forEach(reply => flatten(reply));
+        }
+      }
+
+      messages.forEach(msg => flatten(msg));
+      return flattened;
+    }
+
+    function filterMessagesByDateRange(messages, dateFrom, dateTo) {
+      if (!dateFrom && !dateTo) {
+        return messages; // No filtering needed
+      }
+
+      return messages.filter(msg => {
+        const msgDate = new Date(msg.date);
+        if (isNaN(msgDate.getTime())) {
+          return true; // Keep messages with invalid dates
+        }
+
+        if (dateFrom && msgDate < dateFrom) {
+          return false;
+        }
+        if (dateTo && msgDate > dateTo) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+
+    // Store the loaded data globally so we can reprocess it with different filters
+    let loadedData = null;
+
+    // Progress bar for file loading
+    function updateLoadProgress(current, total, text = 'Loading...') {
+      const progressContainer = document.getElementById('loadProgressContainer');
+      const progressBar = document.getElementById('loadProgressBar');
+      const progressText = document.getElementById('loadProgressText');
+      const progressCount = document.getElementById('loadProgressCount');
+
+      progressContainer.style.display = 'block';
+      progressText.textContent = text;
+      progressCount.textContent = total > 0 ? `${current} / ${total}` : '';
+
+      const percentage = total > 0 ? (current / total) * 100 : 0;
+      progressBar.style.width = `${percentage}%`;
+    }
+
+    function hideLoadProgress() {
+      const progressContainer = document.getElementById('loadProgressContainer');
+      progressContainer.style.display = 'none';
+    }
+
+    // Progress bar for conversion
+    function updateProgress(current, total, text = 'Processing...') {
+      const progressContainer = document.getElementById('progressContainer');
+      const progressBar = document.getElementById('progressBar');
+      const progressText = document.getElementById('progressText');
+      const progressCount = document.getElementById('progressCount');
+
+      progressContainer.style.display = 'block';
+      progressText.textContent = text;
+      progressCount.textContent = `${current} / ${total}`;
+
+      const percentage = total > 0 ? (current / total) * 100 : 0;
+      progressBar.style.width = `${percentage}%`;
+    }
+
+    function hideProgress() {
+      const progressContainer = document.getElementById('progressContainer');
+      progressContainer.style.display = 'none';
+    }
+
+    function buildParentMap(messages) {
+      // Build a map of message_id -> parent_message_id
+      const parentMap = {};
+      messages.forEach(msg => {
+        if (msg.reply_to_message_id) {
+          parentMap[msg.id] = msg.reply_to_message_id;
+        }
+      });
+      return parentMap;
+    }
+
+    function isDescendantOf(messageId, ancestorId, parentMap) {
+      // Check if messageId is a descendant of ancestorId
+      let currentId = messageId;
+      const visited = new Set(); // Prevent infinite loops
+
+      while (currentId && !visited.has(currentId)) {
+        visited.add(currentId);
+        const parentId = parentMap[currentId];
+
+        if (!parentId) {
+          return false; // Reached the top of the chain
+        }
+
+        if (parentId == ancestorId) {
+          return true; // Found the ancestor
+        }
+
+        currentId = parentId;
+      }
+
+      return false;
+    }
+
+    function processMessages() {
+      const outputDiv = document.getElementById('output');
+
+      if (!loadedData) {
+        outputDiv.value = 'No file loaded. Please select a file first.';
+        hideProgress();
+        return;
+      }
+
+      outputDiv.value = 'Processing...';
+
+      // Use setTimeout to allow UI to update
+      setTimeout(() => {
+        try {
+          // Get filter settings
+          const groupByReplies = document.getElementById('groupByReplies').checked;
+          const dateFromInput = document.getElementById('dateFrom').value;
+          const timeFromInput = document.getElementById('timeFrom').value;
+          const dateToInput = document.getElementById('dateTo').value;
+          const timeToInput = document.getElementById('timeTo').value;
+          const childsOfInput = document.getElementById('childsOf').value.trim();
+
+          // Parse date range
+          let dateFrom = null;
+          let dateTo = null;
+
+          if (dateFromInput) {
+            dateFrom = new Date(`${dateFromInput}T${timeFromInput || '00:00'}`);
+          }
+          if (dateToInput) {
+            dateTo = new Date(`${dateToInput}T${timeToInput || '23:59'}`);
+          }
+
+          if (loadedData && Array.isArray(loadedData.messages)) {
+            const totalMessages = loadedData.messages.length;
+            let processedCount = 0;
+            updateProgress(0, totalMessages, 'Filtering messages...');
+
+            // Build parent map for childs_of filter
+            const parentMap = buildParentMap(loadedData.messages);
+
+            // Filter messages by date range and childs_of
+            let filteredMessages = [];
+
+            for (let i = 0; i < loadedData.messages.length; i++) {
+              const msg = loadedData.messages[i];
+              processedCount++;
+
+              // Update progress for every 100 messages or at the end
+              if (processedCount % 100 === 0 || processedCount === totalMessages) {
+                updateProgress(processedCount, totalMessages, 'Filtering messages...');
+              }
+
+              let passesFilter = true;
+
+              // Date filter
+              if (dateFrom || dateTo) {
+                if (msg.date) {
+                  const msgDate = new Date(msg.date);
+                  if (!isNaN(msgDate.getTime())) {
+                    if (dateFrom && msgDate < dateFrom) passesFilter = false;
+                    if (dateTo && msgDate > dateTo) passesFilter = false;
+                  }
+                }
+              }
+
+              // Childs_of filter
+              if (passesFilter && childsOfInput) {
+                const ancestorId = parseInt(childsOfInput);
+                if (!isNaN(ancestorId)) {
+                  // Include the ancestor message itself OR any of its descendants
+                  if (msg.id == ancestorId || isDescendantOf(msg.id, ancestorId, parentMap)) {
+                    passesFilter = true;
+                  } else {
+                    passesFilter = false;
+                  }
+                }
+              }
+
+              if (passesFilter) {
+                filteredMessages.push(msg);
+              }
+            }
+
+            const filteredCount = filteredMessages.length;
+            updateProgress(totalMessages, totalMessages, 'Converting to XML...');
+
+            if (groupByReplies) {
+              // Grouped mode: build message tree
+              const messageTree = buildMessageTree(filteredMessages);
+              if (messageTree.length === 0) {
+                outputDiv.value = 'No messages found matching the criteria.';
+                hideProgress();
+              } else {
+                let xmlOutput = `<chat>\n`;
+                messageTree.forEach(msg => {
+                  xmlOutput += formatMessageToXML(msg, 1);
+                });
+                xmlOutput += `</chat>`;
+                outputDiv.value = xmlOutput;
+                updateProgress(totalMessages, totalMessages, `Conversion complete! (${filteredCount} messages matched)`);
+                setTimeout(hideProgress, 2000);
+              }
+            } else {
+              // Sequential mode: process all messages in order
+              const allMessageObjects = filteredMessages
+                .map(createMessageObject)
+                .filter(msgObj => msgObj !== null);
+
+              if (allMessageObjects.length === 0) {
+                outputDiv.value = 'No messages found matching the criteria.';
+                hideProgress();
+              } else {
+                let xmlOutput = `<chat>\n`;
+                allMessageObjects.forEach(msg => {
+                  xmlOutput += formatMessageToXMLFlat(msg, 1);
+                });
+                xmlOutput += `</chat>`;
+                outputDiv.value = xmlOutput;
+                updateProgress(totalMessages, totalMessages, `Conversion complete! (${filteredCount} messages matched)`);
+                setTimeout(hideProgress, 2000);
+              }
+            }
+          } else {
+            outputDiv.value = 'Error: JSON file structure is invalid. Expected an object with a "messages" array.';
+            hideProgress();
+          }
+        } catch (error) {
+          console.error("Error processing messages:", error);
+          outputDiv.value = `Error processing messages: ${error.message}. Check console for more details.`;
+          hideProgress();
+        }
+      }, 100);
+    }
+
+    document.getElementById('jsonFile').addEventListener('change', function (event) {
+      const file = event.target.files[0];
+      const outputDiv = document.getElementById('output');
+
+      if (!file) {
+        outputDiv.value = 'No file selected.';
+        loadedData = null;
+        hideLoadProgress();
+        return;
+      }
+
+      outputDiv.value = 'Loading file...';
+      updateLoadProgress(0, 100, 'Loading file...');
+
+      const reader = new FileReader();
+
+      reader.onload = function (e) {
+        try {
+          const fileContent = e.target.result;
+          if (!fileContent) {
+            outputDiv.value = 'Error: File is empty or could not be read.';
+            loadedData = null;
+            hideLoadProgress();
+            return;
+          }
+          updateLoadProgress(50, 100, 'Parsing JSON...');
+          loadedData = JSON.parse(fileContent);
+          updateLoadProgress(100, 100, 'File loaded successfully!');
+
+          // Show ready message instead of auto-processing
+          const totalMessages = loadedData.messages ? loadedData.messages.length : 0;
+          outputDiv.value = `File loaded successfully!\n\nTotal messages: ${totalMessages}\n\nClick "Convert" button to process the messages.`;
+
+          // Hide progress after a short delay
+          setTimeout(hideLoadProgress, 2000);
+        } catch (error) {
+          console.error("Error parsing file:", error);
+          outputDiv.value = `Error parsing JSON file: ${error.message}. Check console for more details.`;
+          loadedData = null;
+          hideLoadProgress();
+        }
+      };
+
+      reader.onerror = function (err) {
+        console.error("FileReader error:", err);
+        outputDiv.value = 'Error reading file. See browser console for details.';
+        loadedData = null;
+        hideLoadProgress();
+      };
+
+      reader.readAsText(file);
+    });
+
+    // Convert button
+    document.getElementById('applyFilters').addEventListener('click', function () {
+      collapseOptions(); // Collapse the options panel when converting
+      processMessages();
+    });
+
+    document.getElementById('copyButton').addEventListener('click', function () {
+      const outputTextarea = document.getElementById('output');
+      outputTextarea.select();
+      document.execCommand('copy');
+      // Optionally, provide some feedback to the user, e.g., alert('Copied to clipboard!');
+    });
+
+    document.getElementById('saveButton').addEventListener('click', function () {
+      const outputTextarea = document.getElementById('output');
+      const textToSave = outputTextarea.value;
+      const blob = new Blob([textToSave], { type: 'application/xml' }); // Changed type to application/xml
+      const a = document.createElement('a');
+      a.download = 'processed_chat.xml'; // Changed extension to .xml
+      a.href = URL.createObjectURL(blob);
+      a.click();
+      URL.revokeObjectURL(a.href); // Clean up
+      // Optionally, provide some feedback to the user, e.g., alert('Saved!');
+    });
+  </script>
+</body>
+
+</html>
