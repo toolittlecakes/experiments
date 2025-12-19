@@ -222,6 +222,13 @@
         </label>
       </div>
 
+      <div style="margin-bottom: 15px;">
+        <label style="display: inline-flex; align-items: center; cursor: pointer;">
+          <input type="checkbox" id="addReactions" style="margin-right: 8px; width: auto;">
+          <span>Add reactions (e.g. 👍x5 ❤️x3)</span>
+        </label>
+      </div>
+
       <div style="margin-bottom: 10px;">
         <label style="margin-bottom: 8px; display: block;">Time range:</label>
         <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
@@ -403,7 +410,17 @@
       updateTooltipContent();
     });
 
-    function createMessageObject(message) {
+      function formatReactions(reactions) {
+        if (!reactions || !Array.isArray(reactions) || reactions.length === 0) {
+          return null;
+        }
+        return reactions
+          .filter(r => r.emoji && r.count)
+          .map(r => `${r.emoji}x${r.count}`)
+          .join(' ');
+      }
+
+      function createMessageObject(message, options = {}) {
       if (!message) {
         return null;
       }
@@ -417,6 +434,14 @@
       // Add reply_to_message_id if it exists, for tree building
       if (message.reply_to_message_id != null) {
         messageData.reply_to_message_id = message.reply_to_message_id;
+      }
+
+      // Add reactions if option is enabled and reactions exist
+      if (options.addReactions && message.reactions) {
+        const reactionsStr = formatReactions(message.reactions);
+        if (reactionsStr) {
+          messageData.reactions = reactionsStr;
+        }
       }
 
       if (message.type === "message") {
@@ -459,14 +484,14 @@
       }
     }
 
-    function buildMessageTree(messages) {
+      function buildMessageTree(messages, options = {}) {
       if (!Array.isArray(messages)) {
         console.error("Input to buildMessageTree is not an array:", messages);
         return [];
       }
 
       const allMessageObjects = messages
-        .map(createMessageObject)
+        .map(msg => createMessageObject(msg, options))
         .filter(msgObj => msgObj !== null);
 
       const messageMap = {};
@@ -527,6 +552,10 @@
       attributes += ` from="${escapeXml(message.from)}"`;
       attributes += ` type="${escapeXml(message.processed_type)}"`;
 
+      if (message.reactions) {
+        attributes += ` reactions="${escapeXml(message.reactions)}"`;
+      }
+
       if (message.replies && message.replies.length > 0) {
         // Has replies - need closing tag
         let xml = `${indent}<message ${attributes}>\n`;
@@ -559,6 +588,10 @@
 
       if (message.reply_to_message_id) {
         attributes += ` reply_to="${escapeXml(message.reply_to_message_id)}"`;
+      }
+
+      if (message.reactions) {
+        attributes += ` reactions="${escapeXml(message.reactions)}"`;
       }
 
       let xml = `${indent}<message ${attributes}>\n`;
@@ -701,11 +734,15 @@
         try {
           // Get filter settings
           const groupByReplies = document.getElementById('groupByReplies').checked;
+          const addReactions = document.getElementById('addReactions').checked;
           const dateFromInput = document.getElementById('dateFrom').value;
           const timeFromInput = document.getElementById('timeFrom').value;
           const dateToInput = document.getElementById('dateTo').value;
           const timeToInput = document.getElementById('timeTo').value;
           const childsOfInput = document.getElementById('childsOf').value.trim();
+
+          // Options to pass to createMessageObject
+          const conversionOptions = { addReactions };
 
           // Parse date range
           let dateFrom = null;
@@ -774,7 +811,7 @@
 
             if (groupByReplies) {
               // Grouped mode: build message tree
-              const messageTree = buildMessageTree(filteredMessages);
+              const messageTree = buildMessageTree(filteredMessages, conversionOptions);
               if (messageTree.length === 0) {
                 outputDiv.value = 'No messages found matching the criteria.';
                 hideProgress();
@@ -791,7 +828,7 @@
             } else {
               // Sequential mode: process all messages in order
               const allMessageObjects = filteredMessages
-                .map(createMessageObject)
+                .map(msg => createMessageObject(msg, conversionOptions))
                 .filter(msgObj => msgObj !== null);
 
               if (allMessageObjects.length === 0) {
