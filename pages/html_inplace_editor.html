@@ -63,6 +63,14 @@
             min-height: 100vh;
         }
 
+        .app.sidebar-hidden {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .app.sidebar-hidden .sidebar {
+            display: none;
+        }
+
         .sidebar {
             display: flex;
             flex-direction: column;
@@ -189,12 +197,19 @@
 
         .toolbar {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
+            grid-template-columns: auto minmax(0, 1fr) auto;
             align-items: center;
             gap: 14px;
             padding: 12px 16px;
             border-bottom: 1px solid var(--line);
             background: rgba(24, 26, 31, 0.96);
+        }
+
+        .icon-button {
+            width: 38px;
+            padding: 0;
+            font-size: 18px;
+            line-height: 1;
         }
 
         .file-title {
@@ -280,10 +295,11 @@
             }
 
             .toolbar {
-                grid-template-columns: 1fr;
+                grid-template-columns: auto 1fr;
             }
 
             .toolbar-actions {
+                grid-column: 1 / -1;
                 justify-content: stretch;
             }
 
@@ -294,7 +310,7 @@
     </style>
 </head>
 <body>
-    <main class="app">
+    <main id="app" class="app">
         <aside class="sidebar">
             <section class="brand">
                 <h1>HTML Inplace Editor</h1>
@@ -324,11 +340,13 @@
 
         <section class="workspace">
             <header class="toolbar">
+                <button id="toggle-sidebar" class="icon-button" type="button" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
                 <div class="file-title">
                     <strong id="file-name">No file open</strong>
                     <span id="file-path">HTTPS or localhost required by the browser API.</span>
                 </div>
                 <div class="toolbar-actions">
+                    <button id="restore-last" type="button" disabled>Restore</button>
                     <button id="reload" type="button" disabled>Reload</button>
                     <button id="save" class="primary" type="button" disabled>Save</button>
                 </div>
@@ -348,12 +366,16 @@
             filePath: "",
             source: "",
             dirty: false,
+            directoryHandle: null,
             folderEntries: [],
             folderFiles: new Map(),
+            pendingSession: null,
             previewObjectUrls: []
         };
 
         const els = {
+            app: document.getElementById("app"),
+            toggleSidebar: document.getElementById("toggle-sidebar"),
             openFile: document.getElementById("open-file"),
             openFolder: document.getElementById("open-folder"),
             dropZone: document.getElementById("drop-zone"),
@@ -363,19 +385,82 @@
             fileName: document.getElementById("file-name"),
             filePath: document.getElementById("file-path"),
             previewWrap: document.getElementById("preview-wrap"),
+            restoreLast: document.getElementById("restore-last"),
             save: document.getElementById("save"),
             reload: document.getElementById("reload")
         };
+
+        const sidebarStorageKey = "html-inplace-editor.sidebar-hidden";
+        const dbName = "html-inplace-editor";
+        const dbStoreName = "state";
+        const lastSessionKey = "last-session";
+
+        function setSidebarHidden(hidden) {
+            els.app.classList.toggle("sidebar-hidden", hidden);
+            els.toggleSidebar.setAttribute("aria-pressed", String(hidden));
+            localStorage.setItem(sidebarStorageKey, hidden ? "1" : "0");
+        }
 
         function setStatus(message, tone = "") {
             els.status.textContent = message;
             els.status.dataset.tone = tone;
         }
 
+        function openDb() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(dbName, 1);
+
+                request.onupgradeneeded = () => {
+                    request.result.createObjectStore(dbStoreName);
+                };
+
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function readStoredSession() {
+            if (!("indexedDB" in window)) {
+                return null;
+            }
+
+            const db = await openDb();
+            return await new Promise((resolve, reject) => {
+                const transaction = db.transaction(dbStoreName, "readonly");
+                const request = transaction.objectStore(dbStoreName).get(lastSessionKey);
+
+                request.onsuccess = () => resolve(request.result || null);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function rememberLastSession(handle, filePath) {
+            if (!("indexedDB" in window)) {
+                return;
+            }
+
+            const session = state.directoryHandle ?
+                { mode: "folder", directoryHandle: state.directoryHandle, filePath } :
+                { mode: "file", fileHandle: handle, filePath };
+
+            const db = await openDb();
+            await new Promise((resolve, reject) => {
+                const transaction = db.transaction(dbStoreName, "readwrite");
+                const request = transaction.objectStore(dbStoreName).put(session, lastSessionKey);
+
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        }
+
         function hasFileSystemAccess() {
             return "showOpenFilePicker" in window &&
                 "showDirectoryPicker" in window &&
                 "FileSystemFileHandle" in window;
+        }
+
+        async function hasReadWritePermission(handle) {
+            return await handle.queryPermission({ mode: "readwrite" }) === "granted";
         }
 
         function setDirty(nextDirty) {
@@ -424,8 +509,10 @@
 
             els.filePath.textContent = filePath;
             els.reload.disabled = false;
+            els.restoreLast.disabled = true;
             renderActiveFile();
             await renderPreview(source);
+            await rememberLastSession(handle, filePath);
             setDirty(false);
             setStatus(`Opened ${filePath}`, "ok");
         }
@@ -586,6 +673,7 @@
 
             doc.addEventListener("click", blockPreviewLinkNavigation, true);
             doc.addEventListener("auxclick", blockPreviewLinkNavigation, true);
+            doc.addEventListener("keydown", handleSaveShortcut, true);
 
             const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
                 acceptNode(node) {
@@ -772,6 +860,58 @@
             setStatus(`Saved ${state.filePath}`, "ok");
         }
 
+        async function restoreStoredSession(userGesture = false) {
+            const session = state.pendingSession || await readStoredSession();
+            if (!session) {
+                return;
+            }
+
+            if (session.mode === "folder") {
+                if (!userGesture && !await hasReadWritePermission(session.directoryHandle)) {
+                    state.pendingSession = session;
+                    els.restoreLast.disabled = false;
+                    setStatus("Last folder needs permission. Click Restore.", "warn");
+                    return;
+                }
+
+                await verifyPermission(session.directoryHandle);
+                const { htmlEntries, fileEntries } = await scanDirectory(session.directoryHandle);
+                const entry = htmlEntries.find((item) => item.path === session.filePath);
+                if (!entry) {
+                    state.pendingSession = null;
+                    els.restoreLast.disabled = true;
+                    setStatus(`Last file is no longer in the folder: ${session.filePath}`, "warn");
+                    return;
+                }
+
+                state.directoryHandle = session.directoryHandle;
+                state.folderEntries = htmlEntries;
+                setFolderFiles(fileEntries);
+                renderFileList(htmlEntries);
+                await loadFile(entry.handle, entry.path);
+                state.pendingSession = null;
+                els.restoreLast.disabled = true;
+                setStatus(`Restored ${entry.path}`, "ok");
+                return;
+            }
+
+            if (!userGesture && !await hasReadWritePermission(session.fileHandle)) {
+                state.pendingSession = session;
+                els.restoreLast.disabled = false;
+                setStatus("Last file needs permission. Click Restore.", "warn");
+                return;
+            }
+
+            state.directoryHandle = null;
+            state.folderEntries = [];
+            state.folderFiles = new Map();
+            renderFileList([]);
+            await loadFile(session.fileHandle, session.filePath || session.fileHandle.name);
+            state.pendingSession = null;
+            els.restoreLast.disabled = true;
+            setStatus(`Restored ${state.filePath}`, "ok");
+        }
+
         async function openFilePicker() {
             assertSupported();
             const [handle] = await window.showOpenFilePicker({
@@ -783,6 +923,7 @@
                 multiple: false
             });
 
+            state.directoryHandle = null;
             state.folderEntries = [];
             state.folderFiles = new Map();
             renderFileList([]);
@@ -794,6 +935,7 @@
             const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
             const { htmlEntries, fileEntries } = await scanDirectory(directoryHandle);
 
+            state.directoryHandle = directoryHandle;
             state.folderEntries = htmlEntries;
             setFolderFiles(fileEntries);
             renderFileList(htmlEntries);
@@ -820,6 +962,7 @@
             const handle = await item.getAsFileSystemHandle();
             if (handle.kind === "directory") {
                 const { htmlEntries, fileEntries } = await scanDirectory(handle);
+                state.directoryHandle = handle;
                 state.folderEntries = htmlEntries;
                 setFolderFiles(fileEntries);
                 renderFileList(htmlEntries);
@@ -833,6 +976,7 @@
                 return;
             }
 
+            state.directoryHandle = null;
             state.folderEntries = [];
             state.folderFiles = new Map();
             renderFileList([]);
@@ -860,8 +1004,22 @@
             }
         }
 
+        function handleSaveShortcut(event) {
+            if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            runTask(saveCurrentFile);
+        }
+
         els.openFile.addEventListener("click", () => runTask(openFilePicker));
         els.openFolder.addEventListener("click", () => runTask(openFolderPicker));
+        els.restoreLast.addEventListener("click", () => runTask(() => restoreStoredSession(true)));
+        els.toggleSidebar.addEventListener("click", () => {
+            setSidebarHidden(!els.app.classList.contains("sidebar-hidden"));
+        });
         els.save.addEventListener("click", () => runTask(saveCurrentFile));
         els.reload.addEventListener("click", () => runTask(reloadCurrentFile));
 
@@ -876,18 +1034,16 @@
 
         els.dropZone.addEventListener("drop", (event) => runTask(() => openDroppedItem(event)));
 
-        window.addEventListener("keydown", (event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-                event.preventDefault();
-                runTask(saveCurrentFile);
-            }
-        });
+        window.addEventListener("keydown", handleSaveShortcut, true);
 
         if (!window.isSecureContext) {
             setStatus("Open this page over HTTPS or localhost. File writes are blocked on insecure origins.", "error");
         } else if (!hasFileSystemAccess()) {
             setStatus("File System Access writes are unavailable in this browser.", "error");
         }
+
+        setSidebarHidden(localStorage.getItem(sidebarStorageKey) === "1");
+        runTask(() => restoreStoredSession(false));
     </script>
 </body>
 </html>
