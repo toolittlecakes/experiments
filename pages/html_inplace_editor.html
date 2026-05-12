@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML Inplace Editor</title>
+    <style>
+        :root {
+            --bg: #101114;
+            --panel: #181a1f;
+            --panel-2: #20232a;
+            --text: #f3f0e8;
+            --muted: #aaa39a;
+            --line: #343741;
+            --accent: #4fb477;
+            --accent-2: #d2a24c;
+            --danger: #e66b5b;
+            --shadow: rgba(0, 0, 0, 0.28);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        button {
+            border: 1px solid var(--line);
+            background: var(--panel-2);
+            color: var(--text);
+            min-height: 36px;
+            padding: 0 12px;
+            border-radius: 7px;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        button:hover {
+            border-color: var(--accent);
+        }
+
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #08130d;
+            font-weight: 700;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: 320px minmax(0, 1fr);
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            border-right: 1px solid var(--line);
+            background: var(--panel);
+        }
+
+        .brand {
+            padding: 18px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: 18px;
+            line-height: 1.2;
+            letter-spacing: 0;
+        }
+
+        .brand p {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .actions {
+            display: grid;
+            gap: 8px;
+            padding: 14px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .button-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .drop-zone {
+            display: grid;
+            place-items: center;
+            min-height: 96px;
+            border: 1px dashed var(--line);
+            border-radius: 8px;
+            color: var(--muted);
+            text-align: center;
+            padding: 12px;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .drop-zone.dragging {
+            border-color: var(--accent);
+            background: rgba(79, 180, 119, 0.09);
+            color: var(--text);
+        }
+
+        .status {
+            min-height: 44px;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .status[data-tone="ok"] {
+            color: var(--accent);
+        }
+
+        .status[data-tone="warn"] {
+            color: var(--accent-2);
+        }
+
+        .status[data-tone="error"] {
+            color: var(--danger);
+        }
+
+        .files {
+            min-height: 0;
+            overflow: auto;
+            padding: 10px;
+        }
+
+        .files-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin: 0 0 8px;
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .file-list {
+            display: grid;
+            gap: 4px;
+        }
+
+        .file-item {
+            width: 100%;
+            min-height: 34px;
+            overflow: hidden;
+            text-align: left;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .file-item.active {
+            border-color: var(--accent);
+            background: rgba(79, 180, 119, 0.12);
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr);
+            min-width: 0;
+            min-height: 100vh;
+        }
+
+        .toolbar {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--line);
+            background: rgba(24, 26, 31, 0.96);
+        }
+
+        .file-title {
+            min-width: 0;
+        }
+
+        .file-title strong,
+        .file-title span {
+            display: block;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        .file-title strong {
+            font-size: 14px;
+        }
+
+        .file-title span {
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .toolbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .canvas {
+            min-height: 0;
+            padding: 16px;
+            background:
+                linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
+                linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px);
+            background-size: 18px 18px;
+        }
+
+        .preview-wrap {
+            width: 100%;
+            height: 100%;
+            min-height: 360px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+            box-shadow: 0 18px 44px var(--shadow);
+        }
+
+        iframe {
+            display: block;
+            width: 100%;
+            height: 100%;
+            border: 0;
+            background: white;
+        }
+
+        .empty {
+            display: grid;
+            place-items: center;
+            height: 100%;
+            min-height: 360px;
+            color: var(--muted);
+            text-align: center;
+            padding: 32px;
+            line-height: 1.5;
+        }
+
+        @media (max-width: 860px) {
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                min-height: auto;
+                border-right: 0;
+                border-bottom: 1px solid var(--line);
+            }
+
+            .workspace {
+                min-height: 68vh;
+            }
+
+            .toolbar {
+                grid-template-columns: 1fr;
+            }
+
+            .toolbar-actions {
+                justify-content: stretch;
+            }
+
+            .toolbar-actions button {
+                flex: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="app">
+        <aside class="sidebar">
+            <section class="brand">
+                <h1>HTML Inplace Editor</h1>
+                <p>Static HTML text editor. Saves through browser-granted file handles.</p>
+            </section>
+
+            <section class="actions">
+                <div class="button-row">
+                    <button id="open-file" type="button">Open file</button>
+                    <button id="open-folder" type="button">Open folder</button>
+                </div>
+                <div id="drop-zone" class="drop-zone">
+                    Drop an HTML file or folder here.
+                </div>
+            </section>
+
+            <div id="status" class="status">Choose an HTML file or folder to start.</div>
+
+            <section class="files">
+                <div class="files-header">
+                    <span>Folder HTML</span>
+                    <span id="file-count">0</span>
+                </div>
+                <div id="file-list" class="file-list"></div>
+            </section>
+        </aside>
+
+        <section class="workspace">
+            <header class="toolbar">
+                <div class="file-title">
+                    <strong id="file-name">No file open</strong>
+                    <span id="file-path">HTTPS or localhost required by the browser API.</span>
+                </div>
+                <div class="toolbar-actions">
+                    <button id="reload" type="button" disabled>Reload</button>
+                    <button id="save" class="primary" type="button" disabled>Save</button>
+                </div>
+            </header>
+
+            <section class="canvas">
+                <div id="preview-wrap" class="preview-wrap">
+                    <div class="empty">Open a static HTML file, click visible text, edit, then save.</div>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <script>
+        const state = {
+            fileHandle: null,
+            filePath: "",
+            source: "",
+            dirty: false,
+            folderEntries: [],
+            folderFiles: new Map(),
+            previewObjectUrls: []
+        };
+
+        const els = {
+            openFile: document.getElementById("open-file"),
+            openFolder: document.getElementById("open-folder"),
+            dropZone: document.getElementById("drop-zone"),
+            status: document.getElementById("status"),
+            fileList: document.getElementById("file-list"),
+            fileCount: document.getElementById("file-count"),
+            fileName: document.getElementById("file-name"),
+            filePath: document.getElementById("file-path"),
+            previewWrap: document.getElementById("preview-wrap"),
+            save: document.getElementById("save"),
+            reload: document.getElementById("reload")
+        };
+
+        function setStatus(message, tone = "") {
+            els.status.textContent = message;
+            els.status.dataset.tone = tone;
+        }
+
+        function hasFileSystemAccess() {
+            return "showOpenFilePicker" in window &&
+                "showDirectoryPicker" in window &&
+                "FileSystemFileHandle" in window;
+        }
+
+        function setDirty(nextDirty) {
+            state.dirty = nextDirty;
+            els.save.disabled = !state.fileHandle || !state.dirty;
+            els.fileName.textContent = `${state.fileHandle ? state.fileHandle.name : "No file open"}${state.dirty ? " *" : ""}`;
+        }
+
+        function assertSupported() {
+            if (!window.isSecureContext) {
+                throw new Error("Open this page over HTTPS or localhost. Browser file writes need a secure context.");
+            }
+
+            if (!hasFileSystemAccess()) {
+                throw new Error("This browser does not support File System Access writes. Use a recent Chromium browser.");
+            }
+        }
+
+        function isHtmlHandle(handle) {
+            return handle.kind === "file" && /\.html?$/i.test(handle.name);
+        }
+
+        async function verifyPermission(handle) {
+            const options = { mode: "readwrite" };
+            if (await handle.queryPermission(options) === "granted") {
+                return;
+            }
+
+            if (await handle.requestPermission(options) !== "granted") {
+                throw new Error("Write permission was not granted.");
+            }
+        }
+
+        async function loadFile(handle, filePath = handle.name) {
+            if (!isHtmlHandle(handle)) {
+                throw new Error("Only .html and .htm files are supported.");
+            }
+
+            await verifyPermission(handle);
+            const file = await handle.getFile();
+            const source = await file.text();
+
+            state.fileHandle = handle;
+            state.filePath = filePath;
+            state.source = source;
+
+            els.filePath.textContent = filePath;
+            els.reload.disabled = false;
+            renderActiveFile();
+            await renderPreview(source);
+            setDirty(false);
+            setStatus(`Opened ${filePath}`, "ok");
+        }
+
+        function renderActiveFile() {
+            for (const button of els.fileList.querySelectorAll("button")) {
+                button.classList.toggle("active", button.dataset.path === state.filePath);
+            }
+        }
+
+        function renderFileList(entries) {
+            els.fileList.innerHTML = "";
+            els.fileCount.textContent = String(entries.length);
+
+            for (const entry of entries) {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "file-item";
+                button.dataset.path = entry.path;
+                button.title = entry.path;
+                button.textContent = entry.path;
+                button.addEventListener("click", () => runTask(() => openFileFromFolder(entry.handle, entry.path)));
+                els.fileList.append(button);
+            }
+
+            renderActiveFile();
+        }
+
+        async function openFileFromFolder(handle, path) {
+            if (state.dirty && !window.confirm("Discard unsaved changes and open another file?")) {
+                return;
+            }
+
+            await loadFile(handle, path);
+        }
+
+        async function scanDirectory(directoryHandle, prefix = "") {
+            const htmlEntries = [];
+            const fileEntries = [];
+
+            for await (const [name, handle] of directoryHandle.entries()) {
+                const path = prefix ? `${prefix}/${name}` : name;
+                if (handle.kind === "directory") {
+                    const nested = await scanDirectory(handle, path);
+                    htmlEntries.push(...nested.htmlEntries);
+                    fileEntries.push(...nested.fileEntries);
+                    continue;
+                }
+
+                fileEntries.push({ path, handle });
+
+                if (isHtmlHandle(handle)) {
+                    htmlEntries.push({ path, handle });
+                }
+            }
+
+            return {
+                htmlEntries: htmlEntries.sort((left, right) => left.path.localeCompare(right.path)),
+                fileEntries
+            };
+        }
+
+        function setFolderFiles(entries) {
+            state.folderFiles = new Map(entries.map((entry) => [entry.path, entry.handle]));
+        }
+
+        function clearPreviewObjectUrls() {
+            for (const url of state.previewObjectUrls) {
+                URL.revokeObjectURL(url);
+            }
+
+            state.previewObjectUrls = [];
+        }
+
+        async function renderPreview(source) {
+            els.previewWrap.innerHTML = "";
+            const frame = document.createElement("iframe");
+            frame.setAttribute("sandbox", "allow-same-origin");
+            frame.srcdoc = await preparePreviewSource(source);
+            frame.addEventListener("load", () => makeFrameEditable(frame));
+            els.previewWrap.append(frame);
+        }
+
+        async function preparePreviewSource(source) {
+            clearPreviewObjectUrls();
+            if (state.folderFiles.size === 0) {
+                return source;
+            }
+
+            const doc = new DOMParser().parseFromString(source, "text/html");
+            await rewritePreviewAssetUrls(doc);
+
+            const doctype = doc.doctype ?
+                `<!DOCTYPE ${doc.doctype.name}>` :
+                "<!DOCTYPE html>";
+
+            return `${doctype}\n${doc.documentElement.outerHTML}`;
+        }
+
+        async function rewritePreviewAssetUrls(doc) {
+            const refs = [
+                ["img[src]", "src"],
+                ["source[src]", "src"],
+                ["audio[src]", "src"],
+                ["video[src]", "src"],
+                ["video[poster]", "poster"],
+                ["script[src]", "src"],
+                ["link[href]", "href"]
+            ];
+
+            for (const [selector, attr] of refs) {
+                for (const element of doc.querySelectorAll(selector)) {
+                    const rawValue = element.getAttribute(attr);
+                    const resolved = resolveLocalReference(rawValue);
+                    if (resolved.kind !== "local" || isHtmlPath(resolved.path)) {
+                        continue;
+                    }
+
+                    const handle = state.folderFiles.get(resolved.path);
+                    if (!handle) {
+                        continue;
+                    }
+
+                    const file = await handle.getFile();
+                    const objectUrl = URL.createObjectURL(file);
+                    state.previewObjectUrls.push(objectUrl);
+                    rememberPreviewAssetAttr(element, attr, rawValue);
+                    element.setAttribute(attr, objectUrl);
+                }
+            }
+        }
+
+        function rememberPreviewAssetAttr(element, attr, value) {
+            const attrs = element.getAttribute("data-html-inplace-asset-attrs");
+            const nextAttrs = new Set(attrs ? attrs.split(" ") : []);
+            nextAttrs.add(attr);
+
+            element.setAttribute("data-html-inplace-asset-attrs", [...nextAttrs].join(" "));
+            element.setAttribute(`data-html-inplace-original-${attr}`, value);
+        }
+
+        function shouldSkipTextNode(node) {
+            const parent = node.parentElement;
+            if (!parent) {
+                return true;
+            }
+
+            return /^(script|style|noscript|template|svg|meta|title)$/i.test(parent.tagName) ||
+                node.nodeValue.trim().length === 0;
+        }
+
+        function makeFrameEditable(frame) {
+            const doc = frame.contentDocument;
+            if (!doc || !doc.body) {
+                setStatus("Preview loaded, but the document body is missing.", "warn");
+                return;
+            }
+
+            doc.addEventListener("click", blockPreviewLinkNavigation, true);
+            doc.addEventListener("auxclick", blockPreviewLinkNavigation, true);
+
+            const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+                acceptNode(node) {
+                    return shouldSkipTextNode(node) ?
+                        NodeFilter.FILTER_REJECT :
+                        NodeFilter.FILTER_ACCEPT;
+                }
+            });
+
+            const textNodes = [];
+            while (walker.nextNode()) {
+                textNodes.push(walker.currentNode);
+            }
+
+            for (const node of textNodes) {
+                const span = doc.createElement("span");
+                span.contentEditable = "plaintext-only";
+                span.dataset.htmlInplaceText = "true";
+                span.spellcheck = true;
+                span.textContent = node.nodeValue;
+                span.addEventListener("input", () => setDirty(true));
+                node.parentNode.replaceChild(span, node);
+            }
+
+            const style = doc.createElement("style");
+            style.dataset.htmlInplaceEditor = "true";
+            style.textContent = `
+                [data-html-inplace-text="true"] {
+                    outline: 1px dashed rgba(79, 180, 119, 0.45);
+                    outline-offset: 2px;
+                    cursor: text;
+                }
+
+                [data-html-inplace-text="true"]:focus {
+                    outline: 2px solid #4fb477;
+                    background: rgba(79, 180, 119, 0.12);
+                }
+            `;
+            doc.head.append(style);
+        }
+
+        function isHtmlPath(path) {
+            return /\.html?$/i.test(path);
+        }
+
+        function getCurrentDirectory() {
+            const lastSlash = state.filePath.lastIndexOf("/");
+            return lastSlash === -1 ? "" : state.filePath.slice(0, lastSlash + 1);
+        }
+
+        function resolveLocalReference(value) {
+            if (!value) {
+                return { kind: "empty" };
+            }
+
+            if (value.startsWith("#")) {
+                return { kind: "hash", hash: value };
+            }
+
+            if (/^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith("//")) {
+                return { kind: "external" };
+            }
+
+            const baseUrl = `https://local.invalid/${getCurrentDirectory()}`;
+            const url = new URL(value, baseUrl);
+            if (url.origin !== "https://local.invalid") {
+                return { kind: "external" };
+            }
+
+            const path = decodeURIComponent(url.pathname.replace(/^\//, ""));
+            if (!path) {
+                return { kind: "empty" };
+            }
+
+            return { kind: "local", path, hash: url.hash };
+        }
+
+        function blockPreviewLinkNavigation(event) {
+            const anchor = event.target.closest?.("a[href]");
+            if (!anchor) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const editableText = event.target.closest?.("[data-html-inplace-text]");
+            if (editableText) {
+                editableText.focus();
+                setStatus("Link navigation blocked while editing link text.", "warn");
+                return;
+            }
+
+            const href = anchor.getAttribute("href");
+            const resolved = resolveLocalReference(href);
+            if (resolved.kind === "hash") {
+                scrollPreviewToHash(anchor.ownerDocument, resolved.hash);
+                return;
+            }
+
+            if (resolved.kind === "local" && isHtmlPath(resolved.path)) {
+                const handle = state.folderFiles.get(resolved.path);
+                if (!handle) {
+                    setStatus(`Linked HTML file is outside the opened folder: ${href}`, "warn");
+                    return;
+                }
+
+                runTask(async () => {
+                    await openFileFromFolder(handle, resolved.path);
+                    if (resolved.hash) {
+                        requestAnimationFrame(() => {
+                            const frame = els.previewWrap.querySelector("iframe");
+                            scrollPreviewToHash(frame?.contentDocument, resolved.hash);
+                        });
+                    }
+                });
+                return;
+            }
+
+            setStatus(`External or non-HTML link blocked in edit mode: ${href}`, "warn");
+        }
+
+        function scrollPreviewToHash(doc, hash) {
+            if (!doc || !hash) {
+                return;
+            }
+
+            const id = decodeURIComponent(hash.slice(1));
+            const target = doc.getElementById(id) || doc.getElementsByName(id)[0];
+            if (!target) {
+                setStatus(`Anchor not found: ${hash}`, "warn");
+                return;
+            }
+
+            target.scrollIntoView({ block: "start" });
+            setStatus(`Scrolled to ${hash}`, "ok");
+        }
+
+        function serializePreview() {
+            const frame = els.previewWrap.querySelector("iframe");
+            const doc = frame?.contentDocument;
+            if (!doc || !doc.documentElement) {
+                throw new Error("No editable document is loaded.");
+            }
+
+            const clone = doc.cloneNode(true);
+            for (const node of clone.querySelectorAll("[data-html-inplace-editor]")) {
+                node.remove();
+            }
+
+            for (const element of clone.querySelectorAll("[data-html-inplace-asset-attrs]")) {
+                const attrs = element.getAttribute("data-html-inplace-asset-attrs").split(" ");
+                for (const attr of attrs) {
+                    element.setAttribute(attr, element.getAttribute(`data-html-inplace-original-${attr}`));
+                    element.removeAttribute(`data-html-inplace-original-${attr}`);
+                }
+
+                element.removeAttribute("data-html-inplace-asset-attrs");
+            }
+
+            for (const span of clone.querySelectorAll("[data-html-inplace-text]")) {
+                span.replaceWith(clone.createTextNode(span.textContent));
+            }
+
+            const doctype = clone.doctype ?
+                `<!DOCTYPE ${clone.doctype.name}>` :
+                "<!DOCTYPE html>";
+
+            return `${doctype}\n${clone.documentElement.outerHTML}\n`;
+        }
+
+        async function saveCurrentFile() {
+            if (!state.fileHandle) {
+                throw new Error("No file is open.");
+            }
+
+            await verifyPermission(state.fileHandle);
+            const html = serializePreview();
+            const writable = await state.fileHandle.createWritable();
+            await writable.write(html);
+            await writable.close();
+            state.source = html;
+            setDirty(false);
+            setStatus(`Saved ${state.filePath}`, "ok");
+        }
+
+        async function openFilePicker() {
+            assertSupported();
+            const [handle] = await window.showOpenFilePicker({
+                types: [{
+                    description: "HTML files",
+                    accept: { "text/html": [".html", ".htm"] }
+                }],
+                excludeAcceptAllOption: false,
+                multiple: false
+            });
+
+            state.folderEntries = [];
+            state.folderFiles = new Map();
+            renderFileList([]);
+            await loadFile(handle);
+        }
+
+        async function openFolderPicker() {
+            assertSupported();
+            const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+            const { htmlEntries, fileEntries } = await scanDirectory(directoryHandle);
+
+            state.folderEntries = htmlEntries;
+            setFolderFiles(fileEntries);
+            renderFileList(htmlEntries);
+
+            if (htmlEntries.length === 0) {
+                setStatus("No .html files found in that folder.", "warn");
+                return;
+            }
+
+            setStatus(`Found ${htmlEntries.length} HTML file${htmlEntries.length === 1 ? "" : "s"}.`, "ok");
+            await loadFile(htmlEntries[0].handle, htmlEntries[0].path);
+        }
+
+        async function openDroppedItem(event) {
+            assertSupported();
+            event.preventDefault();
+            els.dropZone.classList.remove("dragging");
+
+            const item = event.dataTransfer.items[0];
+            if (!item || typeof item.getAsFileSystemHandle !== "function") {
+                throw new Error("This browser cannot grant writable handles from drag and drop. Use Open file or Open folder.");
+            }
+
+            const handle = await item.getAsFileSystemHandle();
+            if (handle.kind === "directory") {
+                const { htmlEntries, fileEntries } = await scanDirectory(handle);
+                state.folderEntries = htmlEntries;
+                setFolderFiles(fileEntries);
+                renderFileList(htmlEntries);
+
+                if (htmlEntries.length === 0) {
+                    setStatus("Dropped folder has no .html files.", "warn");
+                    return;
+                }
+
+                await loadFile(htmlEntries[0].handle, htmlEntries[0].path);
+                return;
+            }
+
+            state.folderEntries = [];
+            state.folderFiles = new Map();
+            renderFileList([]);
+            await loadFile(handle);
+        }
+
+        async function reloadCurrentFile() {
+            if (!state.fileHandle) {
+                return;
+            }
+
+            await loadFile(state.fileHandle, state.filePath);
+        }
+
+        async function runTask(task) {
+            try {
+                await task();
+            } catch (error) {
+                if (error?.name === "AbortError") {
+                    setStatus("File selection cancelled.", "warn");
+                    return;
+                }
+
+                setStatus(error instanceof Error ? error.message : String(error), "error");
+            }
+        }
+
+        els.openFile.addEventListener("click", () => runTask(openFilePicker));
+        els.openFolder.addEventListener("click", () => runTask(openFolderPicker));
+        els.save.addEventListener("click", () => runTask(saveCurrentFile));
+        els.reload.addEventListener("click", () => runTask(reloadCurrentFile));
+
+        els.dropZone.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            els.dropZone.classList.add("dragging");
+        });
+
+        els.dropZone.addEventListener("dragleave", () => {
+            els.dropZone.classList.remove("dragging");
+        });
+
+        els.dropZone.addEventListener("drop", (event) => runTask(() => openDroppedItem(event)));
+
+        window.addEventListener("keydown", (event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+                event.preventDefault();
+                runTask(saveCurrentFile);
+            }
+        });
+
+        if (!window.isSecureContext) {
+            setStatus("Open this page over HTTPS or localhost. File writes are blocked on insecure origins.", "error");
+        } else if (!hasFileSystemAccess()) {
+            setStatus("File System Access writes are unavailable in this browser.", "error");
+        }
+    </script>
+</body>
+</html>
