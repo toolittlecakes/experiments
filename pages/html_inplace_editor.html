@@ -359,6 +359,7 @@
             </section>
         </section>
     </main>
+    <input id="file-input" type="file" accept=".html,.htm,text/html" hidden>
 
     <script>
         const state = {
@@ -376,6 +377,7 @@
         const els = {
             app: document.getElementById("app"),
             toggleSidebar: document.getElementById("toggle-sidebar"),
+            fileInput: document.getElementById("file-input"),
             openFile: document.getElementById("open-file"),
             openFolder: document.getElementById("open-folder"),
             dropZone: document.getElementById("drop-zone"),
@@ -465,8 +467,8 @@
 
         function setDirty(nextDirty) {
             state.dirty = nextDirty;
-            els.save.disabled = !state.fileHandle || !state.dirty;
-            els.fileName.textContent = `${state.fileHandle ? state.fileHandle.name : "No file open"}${state.dirty ? " *" : ""}`;
+            els.save.disabled = !state.filePath || !state.dirty;
+            els.fileName.textContent = `${state.filePath || "No file open"}${state.dirty ? " *" : ""}`;
         }
 
         function assertSupported() {
@@ -515,6 +517,28 @@
             await rememberLastSession(handle, filePath);
             setDirty(false);
             setStatus(`Opened ${filePath}`, "ok");
+        }
+
+        async function loadDownloadFile(file) {
+            if (!/\.html?$/i.test(file.name)) {
+                throw new Error("Only .html and .htm files are supported.");
+            }
+
+            state.fileHandle = null;
+            state.directoryHandle = null;
+            state.folderEntries = [];
+            state.folderFiles = new Map();
+            state.filePath = file.name;
+            state.source = await file.text();
+
+            els.filePath.textContent = `${file.name} · Downloads save mode`;
+            els.reload.disabled = true;
+            els.restoreLast.disabled = true;
+            renderFileList([]);
+            renderActiveFile();
+            await renderPreview(state.source);
+            setDirty(false);
+            setStatus(`Opened ${file.name}. Save will download a new HTML file.`, "warn");
         }
 
         function renderActiveFile() {
@@ -846,18 +870,38 @@
         }
 
         async function saveCurrentFile() {
-            if (!state.fileHandle) {
+            if (!state.filePath) {
                 throw new Error("No file is open.");
             }
 
-            await verifyPermission(state.fileHandle);
             const html = serializePreview();
+            if (!state.fileHandle) {
+                downloadHtml(html);
+                state.source = html;
+                setDirty(false);
+                setStatus(`Downloaded ${state.filePath}`, "ok");
+                return;
+            }
+
+            await verifyPermission(state.fileHandle);
             const writable = await state.fileHandle.createWritable();
             await writable.write(html);
             await writable.close();
             state.source = html;
             setDirty(false);
             setStatus(`Saved ${state.filePath}`, "ok");
+        }
+
+        function downloadHtml(html) {
+            const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = state.filePath || "edited.html";
+            document.body.append(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
         }
 
         async function restoreStoredSession(userGesture = false) {
@@ -913,6 +957,11 @@
         }
 
         async function openFilePicker() {
+            if (!hasFileSystemAccess()) {
+                els.fileInput.click();
+                return;
+            }
+
             assertSupported();
             const [handle] = await window.showOpenFilePicker({
                 types: [{
@@ -950,10 +999,20 @@
         }
 
         async function openDroppedItem(event) {
-            assertSupported();
             event.preventDefault();
             els.dropZone.classList.remove("dragging");
 
+            if (!hasFileSystemAccess()) {
+                const file = event.dataTransfer.files[0];
+                if (!file) {
+                    throw new Error("Drop an HTML file. Folder drops need File System Access API.");
+                }
+
+                await loadDownloadFile(file);
+                return;
+            }
+
+            assertSupported();
             const item = event.dataTransfer.items[0];
             if (!item || typeof item.getAsFileSystemHandle !== "function") {
                 throw new Error("This browser cannot grant writable handles from drag and drop. Use Open file or Open folder.");
@@ -1016,6 +1075,13 @@
 
         els.openFile.addEventListener("click", () => runTask(openFilePicker));
         els.openFolder.addEventListener("click", () => runTask(openFolderPicker));
+        els.fileInput.addEventListener("change", () => {
+            const file = els.fileInput.files[0];
+            els.fileInput.value = "";
+            if (file) {
+                runTask(() => loadDownloadFile(file));
+            }
+        });
         els.restoreLast.addEventListener("click", () => runTask(() => restoreStoredSession(true)));
         els.toggleSidebar.addEventListener("click", () => {
             setSidebarHidden(!els.app.classList.contains("sidebar-hidden"));
@@ -1036,14 +1102,16 @@
 
         window.addEventListener("keydown", handleSaveShortcut, true);
 
-        if (!window.isSecureContext) {
-            setStatus("Open this page over HTTPS or localhost. File writes are blocked on insecure origins.", "error");
-        } else if (!hasFileSystemAccess()) {
-            setStatus("File System Access writes are unavailable in this browser.", "error");
+        if (!hasFileSystemAccess()) {
+            setStatus("File System Access is unavailable. Open file still works; Save downloads the edited HTML.", "warn");
+        } else if (!window.isSecureContext) {
+            setStatus("Open this page over HTTPS or localhost. File writes need a secure origin.", "error");
         }
 
         setSidebarHidden(localStorage.getItem(sidebarStorageKey) === "1");
-        runTask(() => restoreStoredSession(false));
+        if (hasFileSystemAccess()) {
+            runTask(() => restoreStoredSession(false));
+        }
     </script>
 </body>
 </html>
