@@ -618,25 +618,56 @@
             state.previewObserver = null;
             const frame = document.createElement("iframe");
             frame.setAttribute("sandbox", "allow-same-origin allow-scripts allow-forms allow-popups allow-modals");
-            frame.srcdoc = await preparePreviewSource(source);
+            const previewSource = await preparePreviewSource(source);
+            const previewUrl = URL.createObjectURL(new Blob([previewSource], { type: "text/html;charset=utf-8" }));
+            state.previewObjectUrls.push(previewUrl);
+            frame.src = previewUrl;
             frame.addEventListener("load", () => makeFrameEditable(frame));
             els.previewWrap.append(frame);
         }
 
         async function preparePreviewSource(source) {
             clearPreviewObjectUrls();
-            if (state.folderFiles.size === 0) {
-                return source;
-            }
-
             const doc = new DOMParser().parseFromString(source, "text/html");
-            await rewritePreviewAssetUrls(doc);
+            installPreviewRuntime(doc);
+
+            if (state.folderFiles.size > 0) {
+                await rewritePreviewAssetUrls(doc);
+            }
 
             const doctype = doc.doctype ?
                 `<!DOCTYPE ${doc.doctype.name}>` :
                 "<!DOCTYPE html>";
 
             return `${doctype}\n${doc.documentElement.outerHTML}`;
+        }
+
+        function installPreviewRuntime(doc) {
+            const script = doc.createElement("script");
+            script.dataset.htmlInplaceEditor = "true";
+            script.textContent = `
+                (() => {
+                    const wrapHistoryMethod = (name) => {
+                        const original = window.history[name].bind(window.history);
+                        window.history[name] = (state, title, url) => {
+                            try {
+                                return original(state, title, url);
+                            } catch (error) {
+                                if (error?.name !== "SecurityError") {
+                                    throw error;
+                                }
+
+                                window.__htmlInplaceVirtualUrl = String(url ?? window.location.href);
+                                return undefined;
+                            }
+                        };
+                    };
+
+                    wrapHistoryMethod("replaceState");
+                    wrapHistoryMethod("pushState");
+                })();
+            `;
+            doc.head.prepend(script);
         }
 
         async function rewritePreviewAssetUrls(doc) {
@@ -704,7 +735,7 @@
             doc.addEventListener("keydown", handleSaveShortcut, true);
 
             installEditorStyles(doc);
-            applyEditableTextSpans(doc);
+            applyEditableTextTargets(doc);
 
             let pending = false;
             state.previewObserver = new MutationObserver(() => {
@@ -715,13 +746,13 @@
                 pending = true;
                 requestAnimationFrame(() => {
                     pending = false;
-                    applyEditableTextSpans(doc);
+                    applyEditableTextTargets(doc);
                 });
             });
             state.previewObserver.observe(doc.body, { childList: true, subtree: true });
         }
 
-        function applyEditableTextSpans(doc) {
+        function applyEditableTextTargets(doc) {
             const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
                 acceptNode(node) {
                     return shouldSkipTextNode(node) ?
@@ -736,14 +767,30 @@
             }
 
             for (const node of textNodes) {
-                const span = doc.createElement("span");
-                span.contentEditable = "plaintext-only";
-                span.dataset.htmlInplaceText = "true";
-                span.spellcheck = true;
-                span.textContent = node.nodeValue;
-                span.addEventListener("input", () => setDirty(true));
-                node.parentNode.replaceChild(span, node);
+                const target = getEditableTarget(node);
+                if (!target || target.dataset.htmlInplaceText === "true") {
+                    continue;
+                }
+
+                target.contentEditable = "plaintext-only";
+                target.dataset.htmlInplaceText = "true";
+                target.spellcheck = true;
+                target.addEventListener("input", () => setDirty(true));
             }
+        }
+
+        function getEditableTarget(textNode) {
+            const parent = textNode.parentElement;
+            if (!parent || /^(html|body)$/i.test(parent.tagName)) {
+                return null;
+            }
+
+            const blocked = parent.closest("button, input, textarea, select, option, iframe, canvas, svg, video, audio");
+            if (blocked) {
+                return null;
+            }
+
+            return parent;
         }
 
         function installEditorStyles(doc) {
@@ -887,8 +934,10 @@
                 element.removeAttribute("data-html-inplace-asset-attrs");
             }
 
-            for (const span of clone.querySelectorAll("[data-html-inplace-text]")) {
-                span.replaceWith(clone.createTextNode(span.textContent));
+            for (const element of clone.querySelectorAll("[data-html-inplace-text]")) {
+                element.removeAttribute("contenteditable");
+                element.removeAttribute("spellcheck");
+                element.removeAttribute("data-html-inplace-text");
             }
 
             const doctype = clone.doctype ?
