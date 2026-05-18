@@ -371,6 +371,7 @@
             folderEntries: [],
             folderFiles: new Map(),
             pendingSession: null,
+            previewObserver: null,
             previewObjectUrls: []
         };
 
@@ -613,8 +614,10 @@
 
         async function renderPreview(source) {
             els.previewWrap.innerHTML = "";
+            state.previewObserver?.disconnect();
+            state.previewObserver = null;
             const frame = document.createElement("iframe");
-            frame.setAttribute("sandbox", "allow-same-origin");
+            frame.setAttribute("sandbox", "allow-same-origin allow-scripts allow-forms allow-popups allow-modals");
             frame.srcdoc = await preparePreviewSource(source);
             frame.addEventListener("load", () => makeFrameEditable(frame));
             els.previewWrap.append(frame);
@@ -684,7 +687,8 @@
                 return true;
             }
 
-            return /^(script|style|noscript|template|svg|meta|title)$/i.test(parent.tagName) ||
+            return parent.closest("[data-html-inplace-text], [data-html-inplace-editor]") ||
+                /^(script|style|noscript|template|svg|meta|title)$/i.test(parent.tagName) ||
                 node.nodeValue.trim().length === 0;
         }
 
@@ -699,6 +703,25 @@
             doc.addEventListener("auxclick", blockPreviewLinkNavigation, true);
             doc.addEventListener("keydown", handleSaveShortcut, true);
 
+            installEditorStyles(doc);
+            applyEditableTextSpans(doc);
+
+            let pending = false;
+            state.previewObserver = new MutationObserver(() => {
+                if (pending) {
+                    return;
+                }
+
+                pending = true;
+                requestAnimationFrame(() => {
+                    pending = false;
+                    applyEditableTextSpans(doc);
+                });
+            });
+            state.previewObserver.observe(doc.body, { childList: true, subtree: true });
+        }
+
+        function applyEditableTextSpans(doc) {
             const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
                 acceptNode(node) {
                     return shouldSkipTextNode(node) ?
@@ -720,6 +743,12 @@
                 span.textContent = node.nodeValue;
                 span.addEventListener("input", () => setDirty(true));
                 node.parentNode.replaceChild(span, node);
+            }
+        }
+
+        function installEditorStyles(doc) {
+            if (doc.head.querySelector("[data-html-inplace-editor]")) {
+                return;
             }
 
             const style = doc.createElement("style");
