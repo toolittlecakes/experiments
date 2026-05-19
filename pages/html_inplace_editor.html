@@ -772,11 +772,51 @@
                     continue;
                 }
 
+                normalizeEditableWhitespace(target);
                 target.contentEditable = "plaintext-only";
                 target.dataset.htmlInplaceText = "true";
                 target.spellcheck = true;
                 target.addEventListener("input", () => setDirty(true));
             }
+        }
+
+        function normalizeEditableWhitespace(target) {
+            const textNodes = getTextNodes(target);
+            const first = textNodes[0];
+            const last = textNodes[textNodes.length - 1];
+
+            if (first) {
+                const leading = first.nodeValue.match(/^\s+/)?.[0] || "";
+                if (leading) {
+                    target.dataset.htmlInplaceLeadingWhitespace = leading;
+                    first.nodeValue = first.nodeValue.slice(leading.length);
+                }
+            }
+
+            if (last) {
+                const trailing = last.nodeValue.match(/\s+$/)?.[0] || "";
+                if (trailing) {
+                    target.dataset.htmlInplaceTrailingWhitespace = trailing;
+                    last.nodeValue = last.nodeValue.slice(0, -trailing.length);
+                }
+            }
+        }
+
+        function getTextNodes(root) {
+            const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                acceptNode(node) {
+                    return /^(script|style|noscript|template|svg|meta|title)$/i.test(node.parentElement?.tagName || "") ?
+                        NodeFilter.FILTER_REJECT :
+                        NodeFilter.FILTER_ACCEPT;
+                }
+            });
+
+            const textNodes = [];
+            while (walker.nextNode()) {
+                textNodes.push(walker.currentNode);
+            }
+
+            return textNodes;
         }
 
         function getEditableTarget(textNode) {
@@ -936,9 +976,12 @@
             }
 
             for (const element of clone.querySelectorAll("[data-html-inplace-text]")) {
+                restoreEditableWhitespace(element);
                 element.removeAttribute("contenteditable");
                 element.removeAttribute("spellcheck");
                 element.removeAttribute("data-html-inplace-text");
+                element.removeAttribute("data-html-inplace-leading-whitespace");
+                element.removeAttribute("data-html-inplace-trailing-whitespace");
             }
 
             const doctype = clone.doctype ?
@@ -946,6 +989,30 @@
                 "<!DOCTYPE html>";
 
             return `${doctype}\n${clone.documentElement.outerHTML}\n`;
+        }
+
+        function restoreEditableWhitespace(element) {
+            const textNodes = getTextNodes(element);
+            const leading = element.getAttribute("data-html-inplace-leading-whitespace") || "";
+            const trailing = element.getAttribute("data-html-inplace-trailing-whitespace") || "";
+
+            if (leading) {
+                if (textNodes[0]) {
+                    textNodes[0].nodeValue = `${leading}${textNodes[0].nodeValue}`;
+                } else {
+                    element.prepend(element.ownerDocument.createTextNode(leading));
+                }
+            }
+
+            if (trailing) {
+                const updatedTextNodes = getTextNodes(element);
+                const last = updatedTextNodes[updatedTextNodes.length - 1];
+                if (last) {
+                    last.nodeValue = `${last.nodeValue}${trailing}`;
+                } else {
+                    element.append(element.ownerDocument.createTextNode(trailing));
+                }
+            }
         }
 
         async function saveCurrentFile() {
