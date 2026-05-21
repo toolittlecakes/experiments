@@ -278,7 +278,6 @@
         let chatHistory = [];
         let currentAppCode = '';
         let isLoading = false;
-        let modelLoadTimer = null;
 
         // --- Initial Application Code ---
         const initialAppCode = `
@@ -433,15 +432,6 @@
             }
         }
 
-        function scheduleLoadModels() {
-            if (modelLoadTimer) {
-                clearTimeout(modelLoadTimer);
-            }
-            modelLoadTimer = setTimeout(() => {
-                loadModels();
-            }, 400);
-        }
-
         /**
          * Marks the last user message as completed with a checkmark and stats.
          * @param {number} duration - API call duration in milliseconds
@@ -590,7 +580,14 @@ Always return the full HTML document, from <!DOCTYPE html> to </html>.`;
         apiKeyInput.addEventListener('input', (e) => {
             apiKey = e.target.value;
             localStorage.setItem(getEndpointConfig().apiKeyStorageKey, apiKey);
-            scheduleLoadModels();
+        });
+
+        apiKeyInput.addEventListener('change', () => {
+            loadModels();
+        });
+
+        apiKeyInput.addEventListener('blur', () => {
+            loadModels();
         });
 
         modelSelect.addEventListener('change', (e) => {

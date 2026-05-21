@@ -359,7 +359,6 @@
     let currentAppCode = localStorage.getItem('vibecoding_currentAppCode') || '';
     let isGenerating = false;
     let debounceTimer = null;
-    let modelLoadTimer = null;
     let abortController = null;
 
     // --- Initial Application Code ---
@@ -534,15 +533,6 @@
         console.error('Models API Error:', error);
         modelSelect.innerHTML = `<option value="">${error.message}</option>`;
       }
-    };
-
-    function scheduleLoadModels() {
-      if (modelLoadTimer) {
-        clearTimeout(modelLoadTimer);
-      }
-      modelLoadTimer = setTimeout(() => {
-        loadModels();
-      }, 400);
     };
 
     /**
@@ -727,7 +717,14 @@ Generate the complete application code that implements the current specification
     apiKeyInput.addEventListener('input', (e) => {
       apiKey = e.target.value;
       localStorage.setItem(getEndpointConfig().apiKeyStorageKey, apiKey);
-      scheduleLoadModels();
+    });
+
+    apiKeyInput.addEventListener('change', () => {
+      loadModels();
+    });
+
+    apiKeyInput.addEventListener('blur', () => {
+      loadModels();
     });
 
     modelSelect.addEventListener('change', (e) => {
