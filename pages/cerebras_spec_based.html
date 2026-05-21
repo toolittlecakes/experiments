@@ -56,6 +56,7 @@
       padding-bottom: 1rem;
     }
 
+    .endpoint-selector-container,
     .api-key-container,
     .model-selector-container {
       margin-bottom: 1rem;
@@ -68,6 +69,7 @@
       flex-direction: column;
     }
 
+    .endpoint-selector-container label,
     .api-key-container label,
     .model-selector-container label,
     .spec-container label {
@@ -77,6 +79,7 @@
       display: block;
     }
 
+    #endpointSelect,
     #apiKeyInput,
     #modelSelect,
     #appSpec {
@@ -147,10 +150,12 @@
       color: #ff6b6b;
     }
 
+    #endpointSelect,
     #modelSelect {
       cursor: pointer;
     }
 
+    #endpointSelect option,
     #modelSelect option {
       background-color: var(--input-bg);
       color: var(--text-color);
@@ -273,19 +278,21 @@
   <div id="app-container">
     <div id="sidebar">
       <h1>Vibecoding</h1>
+      <div class="endpoint-selector-container">
+        <label for="endpointSelect">Endpoint</label>
+        <select id="endpointSelect">
+          <option value="openrouter">OpenRouter + Cerebras</option>
+          <option value="cerebras">Cerebras API</option>
+        </select>
+      </div>
       <div class="api-key-container">
-        <label for="apiKeyInput">OpenRouter API Key</label>
+        <label for="apiKeyInput" id="apiKeyLabel">OpenRouter API Key</label>
         <input type="password" id="apiKeyInput" placeholder="Enter your key here">
       </div>
       <div class="model-selector-container">
         <label for="modelSelect">Model</label>
         <select id="modelSelect">
-          <option value="openai/gpt-oss-120b">OpenAI GPT OSS 120B</option>
-          <option value="qwen/qwen3-235b-a22b-2507">Qwen 3 235B</option>
-          <option value="qwen/qwen3-coder">Qwen 3 Coder</option>
-          <option value="meta-llama/llama-4-maverick">Llama 4 Maverick</option>
-          <option value="meta-llama/llama-4-scout">Llama 4 Scout</option>
-          <option value="meta-llama/llama-3.1-8b-instruct">Llama 3.1 8B</option>
+          <option value="">Loading models...</option>
         </select>
       </div>
       <div class="spec-container">
@@ -302,6 +309,8 @@
 
   <script>
     // --- DOM Elements ---
+    const endpointSelect = document.getElementById('endpointSelect');
+    const apiKeyLabel = document.getElementById('apiKeyLabel');
     const apiKeyInput = document.getElementById('apiKeyInput');
     const modelSelect = document.getElementById('modelSelect');
     const appSpec = document.getElementById('appSpec');
@@ -310,12 +319,47 @@
     const appIframe = document.getElementById('app-iframe');
 
     // --- State Management ---
-    let apiKey = localStorage.getItem('vibecoding_apiKey') || '';
-    let selectedModel = localStorage.getItem('vibecoding_selectedModel') || 'openai/gpt-oss-120b';
+    const ENDPOINTS = {
+      openrouter: {
+        label: 'OpenRouter + Cerebras',
+        apiKeyLabel: 'OpenRouter API Key',
+        apiKeyStorageKey: 'vibecoding_openrouter_apiKey',
+        modelStorageKey: 'vibecoding_openrouter_selectedModel',
+        defaultModel: 'openai/gpt-oss-120b',
+        modelIds: [
+          'z-ai/glm-4.7',
+          'openai/gpt-oss-120b',
+          'qwen/qwen3-235b-a22b-2507',
+          'meta-llama/llama-3.1-8b-instruct'
+        ],
+        modelsUrl: 'https://openrouter.ai/api/v1/models',
+        chatUrl: 'https://openrouter.ai/api/v1/chat/completions',
+        requiresKeyForModels: false,
+        bodyExtras: { provider: { only: ['cerebras'] } }
+      },
+      cerebras: {
+        label: 'Cerebras API',
+        apiKeyLabel: 'Cerebras API Key',
+        apiKeyStorageKey: 'vibecoding_cerebras_apiKey',
+        modelStorageKey: 'vibecoding_cerebras_selectedModel',
+        defaultModel: 'gpt-oss-120b',
+        modelsUrl: 'https://api.cerebras.ai/v1/models',
+        chatUrl: 'https://api.cerebras.ai/v1/chat/completions',
+        requiresKeyForModels: true,
+        bodyExtras: {}
+      }
+    };
+    let selectedEndpoint = localStorage.getItem('vibecoding_endpoint') || 'openrouter';
+    if (!ENDPOINTS[selectedEndpoint]) {
+      selectedEndpoint = 'openrouter';
+    }
+    let apiKey = '';
+    let selectedModel = '';
     let currentSpec = localStorage.getItem('vibecoding_currentSpec') || '';
     let currentAppCode = localStorage.getItem('vibecoding_currentAppCode') || '';
     let isGenerating = false;
     let debounceTimer = null;
+    let modelLoadTimer = null;
     let abortController = null;
 
     // --- Initial Application Code ---
@@ -418,6 +462,89 @@
       return Math.ceil(text.length / 4);
     };
 
+    function getEndpointConfig() {
+      return ENDPOINTS[selectedEndpoint] || ENDPOINTS.openrouter;
+    };
+
+    function getStoredApiKey(config) {
+      return localStorage.getItem(config.apiKeyStorageKey) || (selectedEndpoint === 'openrouter' ? localStorage.getItem('vibecoding_apiKey') : '') || '';
+    };
+
+    function getStoredModel(config) {
+      return localStorage.getItem(config.modelStorageKey) || (selectedEndpoint === 'openrouter' ? localStorage.getItem('vibecoding_selectedModel') : '') || config.defaultModel;
+    };
+
+    function syncEndpointInputs() {
+      const config = getEndpointConfig();
+      apiKey = getStoredApiKey(config);
+      selectedModel = getStoredModel(config);
+      endpointSelect.value = selectedEndpoint;
+      apiKeyLabel.textContent = config.apiKeyLabel;
+      apiKeyInput.value = apiKey;
+      apiKeyInput.placeholder = `Enter your ${config.label} key`;
+    };
+
+    function renderModelOptions(models) {
+      modelSelect.innerHTML = '';
+      for (const model of models) {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = model.name || model.id;
+        modelSelect.appendChild(option);
+      }
+    };
+
+    async function loadModels() {
+      const config = getEndpointConfig();
+      modelSelect.disabled = true;
+      modelSelect.innerHTML = '<option value="">Loading models...</option>';
+
+      if (config.requiresKeyForModels && !apiKey) {
+        modelSelect.innerHTML = '<option value="">Set API key to load models</option>';
+        return;
+      }
+
+      try {
+        const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+        const response = await fetch(config.modelsUrl, { headers });
+        if (!response.ok) {
+          throw new Error(`Models HTTP error! status: ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const allowedModelIds = config.modelIds ? new Set(config.modelIds) : null;
+        const models = (payload.data || [])
+          .filter((model) => model.id)
+          .filter((model) => !allowedModelIds || allowedModelIds.has(model.id))
+          .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+
+        if (models.length === 0) {
+          modelSelect.innerHTML = '<option value="">No models returned</option>';
+          return;
+        }
+
+        renderModelOptions(models);
+        if (!models.some((model) => model.id === selectedModel)) {
+          selectedModel = models.some((model) => model.id === config.defaultModel) ? config.defaultModel : models[0].id;
+          localStorage.setItem(config.modelStorageKey, selectedModel);
+        }
+        modelSelect.value = selectedModel;
+        modelSelect.disabled = false;
+      } catch (error) {
+        console.error('Models API Error:', error);
+        modelSelect.innerHTML = `<option value="">${error.message}</option>`;
+      }
+    };
+
+    function scheduleLoadModels() {
+      if (modelLoadTimer) {
+        clearTimeout(modelLoadTimer);
+      }
+      modelLoadTimer = setTimeout(() => {
+        loadModels();
+      }, 400);
+    };
+
     /**
      * Regenerates the app based on current spec vs previous spec
      */
@@ -447,8 +574,9 @@
         return;
       }
 
+      const config = getEndpointConfig();
       if (!apiKey) {
-        updateStatus('error', 'Please set your OpenRouter API key first.');
+        updateStatus('error', `Please set your ${config.label} API key first.`);
         return;
       }
 
@@ -495,14 +623,18 @@ Generate the complete application code that implements the current specification
 
         const inputTokens = estimateTokens(systemPrompt + prompt);
 
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        const headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        };
+        if (selectedEndpoint === 'openrouter') {
+          headers['HTTP-Referer'] = window.location.origin;
+          headers['X-Title'] = 'Vibecoding';
+        }
+
+        const response = await fetch(config.chatUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': window.location.origin,
-            'X-Title': 'Vibecoding'
-          },
+          headers,
           body: JSON.stringify({
             model: selectedModel,
             messages: [
@@ -510,9 +642,7 @@ Generate the complete application code that implements the current specification
               { role: 'user', content: prompt }
             ],
             temperature: 0.2,
-            provider: {
-              only: ["cerebras"]
-            }
+            ...config.bodyExtras
           }),
           signal: abortController.signal
         });
@@ -587,14 +717,22 @@ Generate the complete application code that implements the current specification
     }
 
     // --- Event Listeners ---
+    endpointSelect.addEventListener('change', (e) => {
+      selectedEndpoint = e.target.value;
+      localStorage.setItem('vibecoding_endpoint', selectedEndpoint);
+      syncEndpointInputs();
+      loadModels();
+    });
+
     apiKeyInput.addEventListener('input', (e) => {
       apiKey = e.target.value;
-      localStorage.setItem('vibecoding_apiKey', apiKey);
+      localStorage.setItem(getEndpointConfig().apiKeyStorageKey, apiKey);
+      scheduleLoadModels();
     });
 
     modelSelect.addEventListener('change', (e) => {
       selectedModel = e.target.value;
-      localStorage.setItem('vibecoding_selectedModel', selectedModel);
+      localStorage.setItem(getEndpointConfig().modelStorageKey, selectedModel);
     });
 
     appSpec.addEventListener('input', handleSpecInput);
@@ -604,8 +742,8 @@ Generate the complete application code that implements the current specification
 
     // --- Initialization ---
     function initialize() {
-      apiKeyInput.value = apiKey;
-      modelSelect.value = selectedModel;
+      syncEndpointInputs();
+      loadModels();
       appSpec.value = currentSpec;
 
       // Load saved app code or use initial code
@@ -615,7 +753,7 @@ Generate the complete application code that implements the current specification
       if (currentSpec) {
         updateStatus('waiting', 'Ready for input...');
       } else {
-        updateStatus('waiting', 'Enter your OpenRouter API key above, select your model, then describe your app in the specification area.');
+        updateStatus('waiting', 'Select an endpoint, set its API key, select a model, then describe your app in the specification area.');
       }
     };
 
