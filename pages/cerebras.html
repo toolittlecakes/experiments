@@ -46,12 +46,67 @@
             border-right: 1px solid var(--border-color);
         }
 
-        #sidebar h1 {
-            margin: 0 0 1rem 0;
-            text-align: center;
-            font-size: 1.5rem;
+        #sidebar.collapsed {
+            width: 52px;
+            min-width: 52px;
+            padding: 0.5rem;
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 1rem;
+        }
+
+        #sidebar h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+
+        .sidebar-content {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            min-height: 0;
+        }
+
+        #sidebar.collapsed h1,
+        #sidebar.collapsed .sidebar-content {
+            display: none;
+        }
+
+        #sidebar.collapsed .sidebar-header {
+            justify-content: center;
+            border-bottom: none;
+            padding-bottom: 0;
+            margin-bottom: 0;
+        }
+
+        #sidebarToggle {
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 0.35rem 0.5rem;
+            font-size: 0.8rem;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        #sidebarToggle:hover {
+            background-color: #333;
+        }
+
+        @media (max-width: 700px) {
+            #sidebar {
+                width: 88vw;
+                min-width: 88vw;
+            }
         }
 
         .endpoint-selector-container,
@@ -197,29 +252,34 @@
 
     <div id="app-container">
         <div id="sidebar">
-            <h1>Vibecoding</h1>
-            <div class="endpoint-selector-container">
-                <label for="endpointSelect">Endpoint</label>
-                <select id="endpointSelect">
-                    <option value="openrouter">OpenRouter + Cerebras</option>
-                    <option value="cerebras">Cerebras API</option>
-                </select>
+            <div class="sidebar-header">
+                <h1>Vibecoding</h1>
+                <button type="button" id="sidebarToggle" aria-controls="sidebar" aria-expanded="true">Hide</button>
             </div>
-            <div class="api-key-container">
-                <label for="apiKeyInput" id="apiKeyLabel">OpenRouter API Key</label>
-                <input type="password" id="apiKeyInput" placeholder="Enter your key here">
+            <div class="sidebar-content">
+                <div class="endpoint-selector-container">
+                    <label for="endpointSelect">Endpoint</label>
+                    <select id="endpointSelect">
+                        <option value="openrouter">OpenRouter + Cerebras</option>
+                        <option value="cerebras">Cerebras API</option>
+                    </select>
+                </div>
+                <div class="api-key-container">
+                    <label for="apiKeyInput" id="apiKeyLabel">OpenRouter API Key</label>
+                    <input type="password" id="apiKeyInput" placeholder="Enter your key here">
+                </div>
+                <div class="model-selector-container">
+                    <label for="modelSelect">Model</label>
+                    <select id="modelSelect">
+                        <option value="">Loading models...</option>
+                    </select>
+                </div>
+                <div id="chat-messages"></div>
+                <form id="chat-form">
+                    <textarea id="chat-input" placeholder="Describe the changes you want..." rows="3"></textarea>
+                    <button type="submit" id="send-button">Send</button>
+                </form>
             </div>
-            <div class="model-selector-container">
-                <label for="modelSelect">Model</label>
-                <select id="modelSelect">
-                    <option value="">Loading models...</option>
-                </select>
-            </div>
-            <div id="chat-messages"></div>
-            <form id="chat-form">
-                <textarea id="chat-input" placeholder="Describe the changes you want..." rows="3"></textarea>
-                <button type="submit" id="send-button">Send</button>
-            </form>
         </div>
         <div id="main-content">
             <iframe id="app-iframe" title="Live Application Preview"></iframe>
@@ -228,6 +288,8 @@
 
     <script>
         // --- DOM Elements ---
+        const sidebar = document.getElementById('sidebar');
+        const sidebarToggle = document.getElementById('sidebarToggle');
         const endpointSelect = document.getElementById('endpointSelect');
         const apiKeyLabel = document.getElementById('apiKeyLabel');
         const apiKeyInput = document.getElementById('apiKeyInput');
@@ -278,6 +340,7 @@
         let chatHistory = [];
         let currentAppCode = '';
         let isLoading = false;
+        let sidebarCollapsed = getInitialSidebarCollapsed();
 
         // --- Initial Application Code ---
         const initialAppCode = `
@@ -356,6 +419,21 @@
         function estimateTokens(text) {
             // Rough estimation: ~4 characters per token for English text
             return Math.ceil(text.length / 4);
+        }
+
+        function getInitialSidebarCollapsed() {
+            const stored = localStorage.getItem('vibecoding_sidebarCollapsed');
+            if (stored !== null) {
+                return stored === 'true';
+            }
+            return window.matchMedia('(max-width: 700px)').matches;
+        }
+
+        function syncSidebarState() {
+            sidebar.classList.toggle('collapsed', sidebarCollapsed);
+            sidebarToggle.textContent = sidebarCollapsed ? 'Show' : 'Hide';
+            sidebarToggle.setAttribute('aria-expanded', String(!sidebarCollapsed));
+            localStorage.setItem('vibecoding_sidebarCollapsed', String(sidebarCollapsed));
         }
 
         function getEndpointConfig() {
@@ -570,6 +648,11 @@ Always return the full HTML document, from <!DOCTYPE html> to </html>.`;
         }
 
         // --- Event Listeners ---
+        sidebarToggle.addEventListener('click', () => {
+            sidebarCollapsed = !sidebarCollapsed;
+            syncSidebarState();
+        });
+
         endpointSelect.addEventListener('change', (e) => {
             selectedEndpoint = e.target.value;
             localStorage.setItem('vibecoding_endpoint', selectedEndpoint);
@@ -607,6 +690,7 @@ Always return the full HTML document, from <!DOCTYPE html> to </html>.`;
 
         // --- Initialization ---
         function initialize() {
+            syncSidebarState();
             syncEndpointInputs();
             loadModels();
             updateIframe(initialAppCode);
