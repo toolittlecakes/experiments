@@ -325,9 +325,9 @@
                 apiKeyStorageKey: 'vibecoding_cerebras_apiKey',
                 modelStorageKey: 'vibecoding_cerebras_selectedModel',
                 defaultModel: 'gpt-oss-120b',
-                modelsUrl: 'https://api.cerebras.ai/v1/models',
+                modelsUrl: 'https://api.cerebras.ai/public/v1/models',
                 chatUrl: 'https://api.cerebras.ai/v1/chat/completions',
-                requiresKeyForModels: true,
+                requiresKeyForModels: false,
                 bodyExtras: {}
             }
         };
@@ -448,6 +448,10 @@
             return localStorage.getItem(config.modelStorageKey) || (selectedEndpoint === 'openrouter' ? localStorage.getItem('vibecoding_selectedModel') : '') || config.defaultModel;
         }
 
+        function getAuthToken() {
+            return apiKey.trim();
+        }
+
         function syncEndpointInputs() {
             const config = getEndpointConfig();
             apiKey = getStoredApiKey(config);
@@ -479,7 +483,8 @@
             }
 
             try {
-                const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+                const authToken = getAuthToken();
+                const headers = config.requiresKeyForModels && authToken ? { Authorization: `Bearer ${authToken}` } : {};
                 const response = await fetch(config.modelsUrl, { headers });
                 if (!response.ok) {
                     throw new Error(`Models HTTP error! status: ${response.status}`);
@@ -558,7 +563,8 @@
             if (!userInput) return;
 
             const config = getEndpointConfig();
-            if (!apiKey) {
+            const authToken = getAuthToken();
+            if (!authToken) {
                 addMessageToChat('system', `Error: Please set your ${config.label} API key first.`);
                 return;
             }
@@ -596,7 +602,7 @@ Always return the full HTML document, from <!DOCTYPE html> to </html>.`;
 
                 const headers = {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
+                    'Authorization': `Bearer ${authToken}`
                 };
                 if (selectedEndpoint === 'openrouter') {
                     headers['HTTP-Referer'] = window.location.origin;
@@ -666,10 +672,16 @@ Always return the full HTML document, from <!DOCTYPE html> to </html>.`;
         });
 
         apiKeyInput.addEventListener('change', () => {
+            apiKey = apiKey.trim();
+            apiKeyInput.value = apiKey;
+            localStorage.setItem(getEndpointConfig().apiKeyStorageKey, apiKey);
             loadModels();
         });
 
         apiKeyInput.addEventListener('blur', () => {
+            apiKey = apiKey.trim();
+            apiKeyInput.value = apiKey;
+            localStorage.setItem(getEndpointConfig().apiKeyStorageKey, apiKey);
             loadModels();
         });
 
